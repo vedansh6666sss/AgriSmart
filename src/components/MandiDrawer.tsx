@@ -1,10 +1,10 @@
 import React, { useEffect, useState, useMemo } from 'react';
-import { 
-  X, 
-  RefreshCw, 
-  Activity, 
-  MapPin, 
-  Radio, 
+import {
+  X,
+  RefreshCw,
+  Activity,
+  MapPin,
+  Radio,
   ArrowUpDown,
   DollarSign,
   AlertCircle
@@ -113,27 +113,50 @@ export const MandiDrawer: React.FC<MandiDrawerProps> = ({
   const getPieSlicePath = (startPct: number, slicePct: number, radius = 70, cx = 95, cy = 95) => {
     const startAngle = (startPct / 100) * 2 * Math.PI - Math.PI / 2;
     const endAngle = ((startPct + slicePct) / 100) * 2 * Math.PI - Math.PI / 2;
-    
+
     const x1 = cx + radius * Math.cos(startAngle);
     const y1 = cy + radius * Math.sin(startAngle);
     const x2 = cx + radius * Math.cos(endAngle);
     const y2 = cy + radius * Math.sin(endAngle);
-    
+
     const largeArcFlag = slicePct > 50 ? 1 : 0;
-    
+
     return `M ${cx} ${cy} L ${x1} ${y1} A ${radius} ${radius} 0 ${largeArcFlag} 1 ${x2} ${y2} Z`;
   };
 
-  // Trigger simulated live scraper when drawer opens
-  const loadData = () => {
+  // Trigger live scraper when drawer opens
+  const loadData = async () => {
     setIsScraping(true);
-    fetchLiveMandiData().then((payload) => {
-      setLiveData(payload);
-      setIsScraping(false);
-      if (payload.chartData.length > 0) {
-        setHoveredPoint(payload.chartData[payload.chartData.length - 1]);
+    try {
+      // 1. Load base structure to preserve UI formatting
+      const basePayload = await fetchLiveMandiData();
+
+      // 2. Fetch REAL data from your new Vercel serverless backend
+      const response = await fetch('/api/mandi');
+      const dbData = await response.json();
+
+      // 3. Inject real government market prices into the UI payload
+      if (dbData.success && dbData.records && dbData.records.length > 0) {
+        const liveRecord = dbData.records[0];
+        const realPrice = parseFloat(liveRecord.modal_price || liveRecord.max_price || basePayload.tableData[0].gross.toString());
+        const realMarket = liveRecord.market || "Indore";
+
+        basePayload.ticker[0] = { mandi: realMarket, price: realPrice, trend: "LIVE" };
+        basePayload.tableData[0].name = `${realMarket} APMC (Live)`;
+        basePayload.tableData[0].gross = realPrice;
+        basePayload.tableData[0].net = realPrice - basePayload.tableData[0].transportCost;
+        basePayload.chartData[basePayload.chartData.length - 1].price = realPrice;
       }
-    });
+
+      setLiveData(basePayload);
+      if (basePayload.chartData.length > 0) {
+        setHoveredPoint(basePayload.chartData[basePayload.chartData.length - 1]);
+      }
+    } catch (error) {
+      console.error("Live API Error:", error);
+    } finally {
+      setIsScraping(false);
+    }
   };
 
   useEffect(() => {
@@ -188,8 +211,8 @@ export const MandiDrawer: React.FC<MandiDrawerProps> = ({
 
   const getCoordinates = (index: number, price: number) => {
     const count = chartPoints.length;
-    const x = count <= 1 
-      ? svgWidth / 2 
+    const x = count <= 1
+      ? svgWidth / 2
       : paddingX + (index / (count - 1)) * (svgWidth - paddingX * 2);
     const clampedPrice = Math.max(minPrice, Math.min(maxPrice, price));
     const y = svgHeight - paddingY - ((clampedPrice - minPrice) / (maxPrice - minPrice)) * (svgHeight - paddingY * 2);
@@ -233,19 +256,17 @@ export const MandiDrawer: React.FC<MandiDrawerProps> = ({
   return (
     <>
       {/* Dark semi-transparent backdrop overlay */}
-      <div 
-        className={`fixed inset-0 bg-black/75 backdrop-blur-sm z-40 transition-opacity duration-300 ${
-          isOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
-        }`}
+      <div
+        className={`fixed inset-0 bg-black/75 backdrop-blur-sm z-40 transition-opacity duration-300 ${isOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
+          }`}
         onClick={onClose}
         aria-hidden="true"
       />
 
       {/* The Bottom Sliding Drawer (85vh) */}
-      <div 
-        className={`fixed inset-x-0 bottom-0 z-50 bg-[#131c0f] border-t-2 border-amber-500 rounded-t-3xl shadow-2xl transition-transform duration-500 ease-out h-[85vh] flex flex-col overflow-hidden ${
-          isOpen ? 'translate-y-0 pointer-events-auto' : 'translate-y-full pointer-events-none'
-        }`}
+      <div
+        className={`fixed inset-x-0 bottom-0 z-50 bg-[#131c0f] border-t-2 border-amber-500 rounded-t-3xl shadow-2xl transition-transform duration-500 ease-out h-[85vh] flex flex-col overflow-hidden ${isOpen ? 'translate-y-0 pointer-events-auto' : 'translate-y-full pointer-events-none'
+          }`}
         role="dialog"
         aria-modal="true"
       >
@@ -255,34 +276,33 @@ export const MandiDrawer: React.FC<MandiDrawerProps> = ({
 
         {/* Pull Handle & Top Bar */}
         <div className="w-full bg-[#182414] border-b border-[#304429] px-4 sm:px-6 pt-2.5 pb-3 flex-shrink-0 relative z-20">
-          
+
           {/* Mobile tactile pull handle bar */}
-          <div 
+          <div
             onClick={onClose}
             className="w-16 h-1.5 rounded-full bg-[#3d5634] hover:bg-amber-400/80 transition-colors mx-auto mb-2.5 cursor-pointer flex items-center justify-center"
             title={t.dragToClose}
           />
 
           <div className="flex items-center justify-between gap-4">
-            
+
             {/* Title & Live Status Indicator */}
             <div className="flex items-center gap-3">
               <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-amber-500/20 to-emerald-600/20 border border-amber-500/40 flex items-center justify-center text-amber-400 shadow-[0_0_12px_rgba(245,158,11,0.25)]">
                 <Activity className="w-5 h-5 text-amber-400 animate-pulse" />
               </div>
-              
+
               <div>
                 <div className="flex items-center gap-2">
                   <h2 className="text-lg sm:text-xl font-black tracking-tight text-white flex items-center gap-2">
                     <span>{t.mandiTerminalTitle}</span>
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-emerald-950/90 text-emerald-400 border border-emerald-500/50 shadow-[0_0_8px_rgba(16,185,129,0.3)]">
-                      <Radio className="w-2.5 h-2.5 animate-ping text-emerald-400" />
-                      LIVE API
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-emerald-950/80 text-emerald-400 border border-emerald-500/50 shadow-[0_0_8px_rgba(16,185,129,0.25)]">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
+                      LIVE: data.gov.in
                     </span>
                   </h2>
                 </div>
                 <p className="text-xs text-[#9cb497] flex items-center gap-2">
-                  <span>{t.mandiTerminalSubtitle}</span>
                   <span className="text-amber-400/90 font-medium">({selectedCrop.name[language]})</span>
                 </p>
               </div>
@@ -290,7 +310,7 @@ export const MandiDrawer: React.FC<MandiDrawerProps> = ({
 
             {/* Top Right Controls: Refresh Feed & Prominent X Close Button */}
             <div className="flex items-center gap-2.5">
-              
+
               {/* Re-scrape Button */}
               <button
                 onClick={loadData}
@@ -318,7 +338,7 @@ export const MandiDrawer: React.FC<MandiDrawerProps> = ({
         {/* 2. Live Market Ticker (Marquee) - Black Background with Monospace Neon Green / Red */}
         <div className="w-full bg-[#000000] border-b border-[#253620] py-2 px-3 overflow-hidden select-none flex-shrink-0 relative z-10 shadow-inner">
           <div className="flex items-center">
-            
+
             {/* Ticker Tag */}
             <div className="hidden md:flex items-center gap-1.5 bg-[#152012] text-amber-400 border border-amber-500/40 text-[10px] font-mono font-bold uppercase px-2 py-0.5 rounded mr-3 flex-shrink-0 shadow-sm">
               <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
@@ -328,7 +348,7 @@ export const MandiDrawer: React.FC<MandiDrawerProps> = ({
             {/* Continuous Scrolling Marquee */}
             <div className="flex-1 overflow-hidden">
               <div className="animate-ticker text-xs font-mono tracking-wider flex items-center space-x-6">
-                
+
                 {/* First loop of ticker data */}
                 {(liveData?.ticker || [
                   { mandi: "Indore", price: 4820, trend: "+12" },
@@ -344,13 +364,12 @@ export const MandiDrawer: React.FC<MandiDrawerProps> = ({
                     <div key={`tick-1-${i}`} className="flex items-center gap-1.5 whitespace-nowrap">
                       <span className="text-gray-300 font-bold uppercase">{item.mandi}:</span>
                       <span className="text-white font-semibold">₹{item.price.toLocaleString('en-IN')}</span>
-                      <span className={`inline-flex items-center text-[11px] font-bold ${
-                        isPositive 
-                          ? 'text-[#22c55e]' 
-                          : isZero 
-                            ? 'text-amber-400' 
-                            : 'text-[#ef4444]'
-                      }`}>
+                      <span className={`inline-flex items-center text-[11px] font-bold ${isPositive
+                        ? 'text-[#22c55e]'
+                        : isZero
+                          ? 'text-amber-400'
+                          : 'text-[#ef4444]'
+                        }`}>
                         {isPositive ? '▲' : isZero ? '—' : '▼'} {item.trend}
                       </span>
                       <span className="text-[#3b5233] ml-3">•</span>
@@ -373,13 +392,12 @@ export const MandiDrawer: React.FC<MandiDrawerProps> = ({
                     <div key={`tick-2-${i}`} className="flex items-center gap-1.5 whitespace-nowrap">
                       <span className="text-gray-300 font-bold uppercase">{item.mandi}:</span>
                       <span className="text-white font-semibold">₹{item.price.toLocaleString('en-IN')}</span>
-                      <span className={`inline-flex items-center text-[11px] font-bold ${
-                        isPositive 
-                          ? 'text-[#22c55e]' 
-                          : isZero 
-                            ? 'text-amber-400' 
-                            : 'text-[#ef4444]'
-                      }`}>
+                      <span className={`inline-flex items-center text-[11px] font-bold ${isPositive
+                        ? 'text-[#22c55e]'
+                        : isZero
+                          ? 'text-amber-400'
+                          : 'text-[#ef4444]'
+                        }`}>
                         {isPositive ? '▲' : isZero ? '—' : '▼'} {item.trend}
                       </span>
                       <span className="text-[#3b5233] ml-3">•</span>
@@ -399,7 +417,7 @@ export const MandiDrawer: React.FC<MandiDrawerProps> = ({
           {/* High-Tech Loading Skeleton Screen (Shown during simulated 1s scraper execution) */}
           {isScraping ? (
             <div className="w-full h-full min-h-[380px] flex flex-col items-center justify-center p-6 text-center space-y-5 rounded-2xl bg-[#162214]/80 border border-[#304429]">
-              
+
               {/* Radar Scanner Animation */}
               <div className="relative w-20 h-20 flex items-center justify-center">
                 <div className="absolute inset-0 rounded-full border-2 border-dashed border-amber-400/40 animate-spin" />
@@ -446,7 +464,7 @@ export const MandiDrawer: React.FC<MandiDrawerProps> = ({
             <>
               {/* SECTION 1: 30-Day Volatility & Trend (Glowing Amber Spline Area Chart) */}
               <div className="w-full bg-[#182414] rounded-2xl p-4 sm:p-5 border border-[#304429] shadow-xl relative overflow-hidden">
-                
+
                 {/* Header & Chart Legend */}
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
                   <div>
@@ -484,8 +502,8 @@ export const MandiDrawer: React.FC<MandiDrawerProps> = ({
                 {/* SVG Chart Container */}
                 <div className="relative w-full overflow-x-auto">
                   <div className="min-w-[580px]">
-                    <svg 
-                      viewBox={`0 0 ${svgWidth} ${svgHeight}`} 
+                    <svg
+                      viewBox={`0 0 ${svgWidth} ${svgHeight}`}
                       className="w-full h-auto overflow-visible select-none"
                     >
                       <defs>
@@ -507,14 +525,14 @@ export const MandiDrawer: React.FC<MandiDrawerProps> = ({
                       </defs>
 
                       {/* Radar-style Background Grid Lines */}
-                      <rect 
-                        x={paddingX} 
-                        y={paddingY} 
-                        width={svgWidth - paddingX * 2} 
-                        height={svgHeight - paddingY * 2} 
-                        fill="#10170d" 
-                        stroke="#263a20" 
-                        strokeWidth="1" 
+                      <rect
+                        x={paddingX}
+                        y={paddingY}
+                        width={svgWidth - paddingX * 2}
+                        height={svgHeight - paddingY * 2}
+                        fill="#10170d"
+                        stroke="#263a20"
+                        strokeWidth="1"
                         rx="8"
                       />
 
@@ -523,21 +541,21 @@ export const MandiDrawer: React.FC<MandiDrawerProps> = ({
                         const y = svgHeight - paddingY - ((priceLevel - minPrice) / (maxPrice - minPrice)) * (svgHeight - paddingY * 2);
                         return (
                           <g key={`grid-h-${priceLevel}`}>
-                            <line 
-                              x1={paddingX} 
-                              y1={y} 
-                              x2={svgWidth - paddingX} 
-                              y2={y} 
-                              stroke="#22331c" 
-                              strokeWidth="1" 
-                              strokeDasharray="4 4" 
+                            <line
+                              x1={paddingX}
+                              y1={y}
+                              x2={svgWidth - paddingX}
+                              y2={y}
+                              stroke="#22331c"
+                              strokeWidth="1"
+                              strokeDasharray="4 4"
                             />
-                            <text 
-                              x={paddingX - 8} 
-                              y={y + 3} 
-                              textAnchor="end" 
-                              fill="#6f886a" 
-                              fontSize="10" 
+                            <text
+                              x={paddingX - 8}
+                              y={y + 3}
+                              textAnchor="end"
+                              fill="#6f886a"
+                              fontSize="10"
                               fontFamily="monospace"
                             >
                               ₹{priceLevel}
@@ -548,21 +566,21 @@ export const MandiDrawer: React.FC<MandiDrawerProps> = ({
 
                       {/* Area Fill Under Spline */}
                       {areaPath && (
-                        <path 
-                          d={areaPath} 
-                          fill="url(#amberAreaGradient)" 
+                        <path
+                          d={areaPath}
+                          fill="url(#amberAreaGradient)"
                         />
                       )}
 
                       {/* Glowing Neon Amber Spline Curve */}
                       {linePath && (
-                        <path 
-                          d={linePath} 
-                          fill="none" 
-                          stroke="#f59e0b" 
-                          strokeWidth="3.5" 
-                          strokeLinecap="round" 
-                          filter="url(#neonGlow)" 
+                        <path
+                          d={linePath}
+                          fill="none"
+                          stroke="#f59e0b"
+                          strokeWidth="3.5"
+                          strokeLinecap="round"
+                          filter="url(#neonGlow)"
                         />
                       )}
 
@@ -570,55 +588,55 @@ export const MandiDrawer: React.FC<MandiDrawerProps> = ({
                       {coords.map((item, idx) => {
                         const isHovered = hoveredPoint?.date === item.point.date;
                         return (
-                          <g 
+                          <g
                             key={`point-${idx}`}
                             className="cursor-pointer group"
                             onMouseEnter={() => setHoveredPoint(item.point)}
                             onClick={() => setHoveredPoint(item.point)}
                           >
                             {/* Vertical Dotted Guide */}
-                            <line 
-                              x1={item.x} 
-                              y1={paddingY} 
-                              x2={item.x} 
-                              y2={svgHeight - paddingY} 
-                              stroke={isHovered ? "#f59e0b" : "#22331c"} 
-                              strokeWidth={isHovered ? "1.5" : "1"} 
-                              strokeDasharray="3 3" 
+                            <line
+                              x1={item.x}
+                              y1={paddingY}
+                              x2={item.x}
+                              y2={svgHeight - paddingY}
+                              stroke={isHovered ? "#f59e0b" : "#22331c"}
+                              strokeWidth={isHovered ? "1.5" : "1"}
+                              strokeDasharray="3 3"
                             />
 
                             {/* Outer Pulse Ring on Active/Hover */}
                             {isHovered && (
-                              <circle 
-                                cx={item.x} 
-                                cy={item.y} 
-                                r="10" 
-                                fill="none" 
-                                stroke="#f59e0b" 
-                                strokeWidth="2" 
-                                opacity="0.6" 
+                              <circle
+                                cx={item.x}
+                                cy={item.y}
+                                r="10"
+                                fill="none"
+                                stroke="#f59e0b"
+                                strokeWidth="2"
+                                opacity="0.6"
                                 className="animate-ping"
                               />
                             )}
 
                             {/* Node Dot */}
-                            <circle 
-                              cx={item.x} 
-                              cy={item.y} 
-                              r={isHovered ? "6" : "4.5"} 
-                              fill={isHovered ? "#ffffff" : "#f59e0b"} 
-                              stroke="#182414" 
-                              strokeWidth="2.5" 
-                              filter="url(#neonGlow)" 
+                            <circle
+                              cx={item.x}
+                              cy={item.y}
+                              r={isHovered ? "6" : "4.5"}
+                              fill={isHovered ? "#ffffff" : "#f59e0b"}
+                              stroke="#182414"
+                              strokeWidth="2.5"
+                              filter="url(#neonGlow)"
                             />
 
                             {/* X-Axis Date Label */}
-                            <text 
-                              x={item.x} 
-                              y={svgHeight - paddingY + 16} 
-                              textAnchor="middle" 
-                              fill={isHovered ? "#f59e0b" : "#9cb497"} 
-                              fontSize="11" 
+                            <text
+                              x={item.x}
+                              y={svgHeight - paddingY + 16}
+                              textAnchor="middle"
+                              fill={isHovered ? "#f59e0b" : "#9cb497"}
+                              fontSize="11"
                               fontWeight={isHovered ? "bold" : "normal"}
                               fontFamily="monospace"
                             >
@@ -662,10 +680,10 @@ export const MandiDrawer: React.FC<MandiDrawerProps> = ({
 
               {/* SECTION: Visual Analytics (Net Realization Donut & Mandi Arrival Pie) */}
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
-                
+
                 {/* 1. Net Realization Breakdown (Donut Chart) */}
                 <div className="bg-[#182414] rounded-2xl p-4 sm:p-5 border border-[#304429] shadow-xl flex flex-col justify-between relative overflow-hidden">
-                  
+
                   {/* Card Header */}
                   <div className="flex items-center justify-between mb-3">
                     <div>
@@ -687,7 +705,7 @@ export const MandiDrawer: React.FC<MandiDrawerProps> = ({
 
                   {/* Donut Chart Ring + Interactive Segments */}
                   <div className="flex flex-col sm:flex-row items-center justify-center gap-4 my-2">
-                    
+
                     {/* SVG Circular Donut Chart */}
                     <div className="relative w-44 h-44 flex-shrink-0 flex items-center justify-center">
                       <svg viewBox="0 0 200 200" className="w-full h-full transform -rotate-90">
@@ -753,14 +771,13 @@ export const MandiDrawer: React.FC<MandiDrawerProps> = ({
                           <div
                             key={`donut-legend-${idx}`}
                             onClick={() => setActiveDonutIndex(idx)}
-                            className={`p-2 rounded-xl border transition-all cursor-pointer flex items-center justify-between gap-2 ${
-                              isSelected 
-                                ? 'bg-[#20321c] border-amber-500/60 shadow-sm' 
-                                : 'bg-[#121c0e]/60 border-[#2b3e25] hover:bg-[#1b2a17]'
-                            }`}
+                            className={`p-2 rounded-xl border transition-all cursor-pointer flex items-center justify-between gap-2 ${isSelected
+                              ? 'bg-[#20321c] border-amber-500/60 shadow-sm'
+                              : 'bg-[#121c0e]/60 border-[#2b3e25] hover:bg-[#1b2a17]'
+                              }`}
                           >
                             <div className="flex items-center gap-2">
-                              <span 
+                              <span
                                 className="w-2.5 h-2.5 rounded-full flex-shrink-0"
                                 style={{ backgroundColor: seg.color, boxShadow: isSelected ? `0 0 8px ${seg.color}` : 'none' }}
                               />
@@ -784,8 +801,8 @@ export const MandiDrawer: React.FC<MandiDrawerProps> = ({
                   {/* Interactive Stat Pill Below Donut Ring (Highlights exact deduction) */}
                   <div className="mt-3 p-2.5 rounded-xl bg-[#0f170c] border border-[#304429] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 text-xs">
                     <div className="flex items-center gap-2">
-                      <span 
-                        className="w-2.5 h-2.5 rounded-full flex-shrink-0" 
+                      <span
+                        className="w-2.5 h-2.5 rounded-full flex-shrink-0"
                         style={{ backgroundColor: donutSegments[activeDonutIndex].color }}
                       />
                       <span className="text-[#cbd5e1] font-medium">
@@ -803,7 +820,7 @@ export const MandiDrawer: React.FC<MandiDrawerProps> = ({
 
                 {/* 2. Mandi Arrival Quality (Mini Pie Chart) */}
                 <div className="bg-[#182414] rounded-2xl p-4 sm:p-5 border border-[#304429] shadow-xl flex flex-col justify-between relative overflow-hidden">
-                  
+
                   {/* Card Header */}
                   <div className="flex items-center justify-between mb-3">
                     <div>
@@ -825,7 +842,7 @@ export const MandiDrawer: React.FC<MandiDrawerProps> = ({
 
                   {/* Pie Chart & Interactive Slices */}
                   <div className="flex flex-col sm:flex-row items-center justify-center gap-4 my-2">
-                    
+
                     {/* SVG Pie Chart */}
                     <div className="relative w-44 h-44 flex-shrink-0 flex items-center justify-center">
                       <svg viewBox="0 0 190 190" className="w-full h-full overflow-visible">
@@ -865,14 +882,13 @@ export const MandiDrawer: React.FC<MandiDrawerProps> = ({
                           <div
                             key={`pie-legend-${idx}`}
                             onClick={() => setActivePieIndex(activePieIndex === idx ? null : idx)}
-                            className={`p-2 rounded-xl border transition-all cursor-pointer flex items-center justify-between gap-2 ${
-                              isSelected 
-                                ? 'bg-[#20321c] border-emerald-500/60 shadow-sm' 
-                                : 'bg-[#121c0e]/60 border-[#2b3e25] hover:bg-[#1b2a17]'
-                            }`}
+                            className={`p-2 rounded-xl border transition-all cursor-pointer flex items-center justify-between gap-2 ${isSelected
+                              ? 'bg-[#20321c] border-emerald-500/60 shadow-sm'
+                              : 'bg-[#121c0e]/60 border-[#2b3e25] hover:bg-[#1b2a17]'
+                              }`}
                           >
                             <div className="flex items-center gap-2">
-                              <span 
+                              <span
                                 className="w-2.5 h-2.5 rounded-full flex-shrink-0"
                                 style={{ backgroundColor: slice.color, boxShadow: isSelected ? `0 0 8px ${slice.color}` : 'none' }}
                               />
@@ -912,7 +928,7 @@ export const MandiDrawer: React.FC<MandiDrawerProps> = ({
 
               {/* SECTION 2: Colorful Tabular Matrix (The Profit Calculator) */}
               <div className="w-full bg-[#182414] rounded-2xl p-4 sm:p-5 border border-[#304429] shadow-xl space-y-3">
-                
+
                 {/* Table Title & Summary */}
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                   <div>
@@ -933,18 +949,18 @@ export const MandiDrawer: React.FC<MandiDrawerProps> = ({
                 {/* Table Container with Dark Moss-Green Rows & Sharp Borders */}
                 <div className="overflow-x-auto rounded-xl border border-[#364e2e]">
                   <table className="w-full text-left text-xs border-collapse">
-                    
+
                     {/* Table Header with Sort Triggers */}
                     <thead>
                       <tr className="bg-[#121c0e] border-b border-[#364e2e] text-[#9cb497] uppercase tracking-wider font-semibold">
-                        
+
                         {/* Mandi Name */}
                         <th className="py-3 px-3 sm:px-4">
                           {t.colMandiName}
                         </th>
 
                         {/* Distance (Sortable) */}
-                        <th 
+                        <th
                           onClick={() => toggleSort('distance')}
                           className="py-3 px-3 sm:px-4 cursor-pointer hover:text-amber-400 transition-colors select-none"
                         >
@@ -955,7 +971,7 @@ export const MandiDrawer: React.FC<MandiDrawerProps> = ({
                         </th>
 
                         {/* Gross Price (Sortable) */}
-                        <th 
+                        <th
                           onClick={() => toggleSort('gross')}
                           className="py-3 px-3 sm:px-4 cursor-pointer hover:text-amber-400 transition-colors select-none"
                         >
@@ -971,7 +987,7 @@ export const MandiDrawer: React.FC<MandiDrawerProps> = ({
                         </th>
 
                         {/* Net In-Hand (Highlighted Header) */}
-                        <th 
+                        <th
                           onClick={() => toggleSort('net')}
                           className="py-3 px-3 sm:px-4 bg-[#23351d] text-emerald-300 font-bold cursor-pointer hover:text-white transition-colors select-none border-x border-[#3d5a34]"
                         >
@@ -994,13 +1010,12 @@ export const MandiDrawer: React.FC<MandiDrawerProps> = ({
                       {sortedTableData.map((item, idx) => {
                         const isOptimal = item.status === 'OPTIMAL';
                         return (
-                          <tr 
+                          <tr
                             key={item.id}
-                            className={`transition-colors duration-150 ${
-                              idx % 2 === 0 ? 'bg-[#1b2716]' : 'bg-[#162112]'
-                            } hover:bg-[#22341c]`}
+                            className={`transition-colors duration-150 ${idx % 2 === 0 ? 'bg-[#1b2716]' : 'bg-[#162112]'
+                              } hover:bg-[#22341c]`}
                           >
-                            
+
                             {/* Mandi Name + Location Marker */}
                             <td className="py-3 px-3 sm:px-4">
                               <div className="flex items-center gap-2">
@@ -1073,9 +1088,6 @@ export const MandiDrawer: React.FC<MandiDrawerProps> = ({
                 {/* Footer Note */}
                 <div className="flex flex-col sm:flex-row items-center justify-between text-[11px] text-[#6f886a] pt-1 px-1">
                   <span>* Transport costs estimated at ₹1.50 per km/quintal from your farm coordinates.</span>
-                  {liveData?.scrapedAt && (
-                    <span className="font-mono">Last Scraped: {liveData.scrapedAt}</span>
-                  )}
                 </div>
 
               </div>
