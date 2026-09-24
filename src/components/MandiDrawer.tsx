@@ -131,21 +131,33 @@ export const MandiDrawer: React.FC<MandiDrawerProps> = ({
       // 1. Load base structure to preserve UI formatting
       const basePayload = await fetchLiveMandiData();
 
-      // 2. Fetch REAL data from your new Vercel serverless backend
-      const response = await fetch('/api/mandi');
+      // 2. Fetch REAL data, explicitly passing the selected crop
+      const cropQuery = encodeURIComponent(selectedCrop.name.en);
+      const response = await fetch(`/api/mandi?commodity=${cropQuery}`);
       const dbData = await response.json();
 
       // 3. Inject real government market prices into the UI payload
       if (dbData.success && dbData.records && dbData.records.length > 0) {
-        const liveRecord = dbData.records[0];
-        const realPrice = parseFloat(liveRecord.modal_price || liveRecord.max_price || basePayload.tableData[0].gross.toString());
-        const realMarket = liveRecord.market || "Indore";
+        // Loop through all regional mandis in the UI and update them dynamically
+        basePayload.tableData.forEach((row, index) => {
+          // Match the mandi name from the API, or fall back to the main live record
+          const mandiName = row.name.split(' ')[0].toLowerCase();
+          const liveRecord = dbData.records.find((r: any) => r.market?.toLowerCase() === mandiName) || dbData.records[0];
 
-        basePayload.ticker[0] = { mandi: realMarket, price: realPrice, trend: "LIVE" };
-        basePayload.tableData[0].name = `${realMarket} APMC (Live)`;
-        basePayload.tableData[0].gross = realPrice;
-        basePayload.tableData[0].net = realPrice - basePayload.tableData[0].transportCost;
-        basePayload.chartData[basePayload.chartData.length - 1].price = realPrice;
+          const realPrice = parseFloat(liveRecord.modal_price || liveRecord.max_price || row.gross);
+
+          row.gross = realPrice;
+          row.net = realPrice - row.transportCost;
+
+          // Update Marquee Ticker
+          if (basePayload.ticker[index]) {
+            basePayload.ticker[index].price = realPrice;
+          }
+        });
+
+        // Update the main area chart point
+        const finalPrice = basePayload.tableData[0].gross;
+        basePayload.chartData[basePayload.chartData.length - 1].price = finalPrice;
       }
 
       setLiveData(basePayload);
