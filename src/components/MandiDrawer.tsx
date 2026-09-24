@@ -133,7 +133,7 @@ export const MandiDrawer: React.FC<MandiDrawerProps> = ({
 
       // 2. Fetch REAL data, explicitly passing the selected crop
       const cropQuery = encodeURIComponent(selectedCrop.name.en);
-      const response = await fetch(`/api/mandi?commodity=${cropQuery}`);
+      const response = await fetch('/api/mandi?commodity=' + cropQuery);
       const dbData = await response.json();
 
       // 3. Inject real government market prices into the UI payload
